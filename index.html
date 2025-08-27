@@ -7,6 +7,8 @@
   <title>Analizor Facturi Restante (EP.SRL)</title>
   <!-- SheetJS library for Excel file parsing -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
   <style>
     * {
       margin: 0;
@@ -357,6 +359,32 @@
       background: #28a745;
     }
 
+    .chart-wrapper {
+      max-width: 600px;
+      margin: 0 auto 30px;
+    }
+
+    .chart-legend {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-top: 10px;
+      gap: 10px;
+      font-size: 0.9em;
+    }
+
+    .chart-legend .legend-item {
+      display: flex;
+      align-items: center;
+    }
+
+    .chart-legend .legend-color {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 6px;
+    }
 
     @media (max-width: 768px) {
       .content {
@@ -425,6 +453,9 @@
     let fileContent = null;
     let fileType = null;
     let workbookData = null;
+    let debtChart = null;
+
+    Chart.register(ChartDataLabels);
 
     // File upload handling
     const fileInput = document.getElementById('fileInput');
@@ -750,6 +781,7 @@
 
       const avgAmount = results.totalAmount / results.totalCount;
       const priorityClients = results.clients.filter(c => c.total > avgAmount);
+      const chartClients = results.clients.slice(0, Math.min(10, results.clients.length));
 
       let html = `
                 <div class="summary-cards">
@@ -769,8 +801,18 @@
                         <h3>${priorityClients.length}</h3>
                         <p>Clienți Prioritari</p>
                     </div>
+                </div>`;
+
+      if (chartClients.length >= 2) {
+        html += `
+                <div class="chart-wrapper">
+                    <canvas id="debtChart"></canvas>
+                    <div id="chartLegend" class="chart-legend"></div>
                 </div>
-                
+                `;
+      }
+
+      html += `
                 <h2 style="color: #495057; margin-bottom: 20px; border-bottom: 2px solid #dee2e6; padding-bottom: 10px;">
                     📋 Detalii Clienți cu Restanțe
                 </h2>
@@ -851,11 +893,64 @@
             `;
 
       resultsDiv.innerHTML = html;
+
+      if (chartClients.length >= 2) {
+        createDebtChart(chartClients);
+      }
     }
 
     function toggleClient(index) {
       const details = document.getElementById(`client-${index}`);
       details.style.display = details.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function createDebtChart(clients) {
+      const ctx = document.getElementById('debtChart').getContext('2d');
+      const labels = clients.map(c => c.name);
+      const data = clients.map(c => c.total);
+      const colors = labels.map((_, i) => `hsl(${(i * 360) / labels.length}, 70%, 50%)`);
+      const total = data.reduce((a, b) => a + b, 0);
+
+      if (debtChart) {
+        debtChart.destroy();
+      }
+
+      debtChart = new Chart(ctx, {
+        type: 'pie',
+        data: {
+          labels: labels,
+          datasets: [{
+            data: data,
+            backgroundColor: colors
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  const value = context.parsed;
+                  const pct = ((value / total) * 100).toFixed(1);
+                  return `${context.label}: ${value.toLocaleString('ro-RO', {minimumFractionDigits: 2})} RON (${pct}%)`;
+                }
+              }
+            },
+            datalabels: {
+              color: '#fff',
+              formatter: (value) => `${((value / total) * 100).toFixed(1)}%`
+            }
+          }
+        }
+      });
+
+      const legend = document.getElementById('chartLegend');
+      legend.innerHTML = '';
+      clients.forEach((client, i) => {
+        const amount = client.total.toLocaleString('ro-RO', {minimumFractionDigits: 2});
+        legend.innerHTML += `<div class="legend-item"><span class="legend-color" style="background:${colors[i]}"></span>${client.name}: ${amount} RON</div>`;
+      });
     }
   </script>
 </body>
